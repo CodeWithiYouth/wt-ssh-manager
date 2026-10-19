@@ -7,7 +7,7 @@ Windows SSH connection manager with encrypted profiles and an embedded terminal 
 - WinUI 3 desktop interface with a collapsible connection rail.
 - Saved SSH profiles with search, groups and favorites.
 - Passwords encrypted with Windows DPAPI for the current Windows user.
-- Windows ConPTY session hosted inside the app through xterm.js.
+- Windows ConPTY session hosted inside the app through a native Windows Terminal-based WinUI control.
 - Multiple terminal tabs with resize synchronization, clipboard shortcuts and ANSI/VT support.
 - Windows 11 Task Manager-inspired layout with a custom terminal/connection icon.
 
@@ -15,7 +15,6 @@ Windows SSH connection manager with encrypted profiles and an embedded terminal 
 
 - Windows 10 1809 or later.
 - .NET 10 SDK.
-- WebView2 Runtime.
 - Windows OpenSSH Client.
 
 ## Build

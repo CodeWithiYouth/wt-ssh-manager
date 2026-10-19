@@ -14,13 +14,13 @@
 - 顶部标题栏、折叠导航栏和操作按钮使用 Segoe Fluent Icons；应用带有终端与连接组合图标。
 - 点击“连接”或双击档案，在应用内打开终端标签页；多个 SSH 会话可以同时保留。
 - 每个终端标签页的内容就是完整终端区域；复制和粘贴使用终端快捷键 Ctrl+Shift+C/V，标签页关闭按钮负责结束会话。
-- 内嵌终端使用 xterm.js 和 Windows ConPTY，支持 ANSI/VT 画面、交互输入、剪贴板快捷键和窗口尺寸同步，可运行 Cline 等 TUI。
+- 内嵌终端使用 WindowsTerminalControl.WinUI 和 Windows ConPTY，采用 Windows Terminal 原生渲染，使用组合承载避免原生窗口覆盖 WinUI 布局，支持 ANSI/VT 画面、交互输入、鼠标和窗口尺寸同步，可运行 Cline 等 TUI。
 - 关闭终端标签页或主窗口时会结束对应 SSH 进程树；首次连接新主机时会显示主机密钥确认框。
 - 档案保存在当前 Windows 用户的 %APPDATA%/WtSshManager/profiles.json。
 
 ## 运行
 
-需要 Windows 10 1809 或更高版本、.NET 10 SDK、WebView2 Runtime 和 OpenSSH Client。项目使用 Windows App SDK 2.5.1，并以 self-contained 模式包含 Windows App SDK 运行时。终端前端资源已随应用打包，运行时不需要访问网络。
+需要 Windows 10 1809 或更高版本、.NET 10 SDK 和 OpenSSH Client。项目使用 Windows App SDK 2.4.1 Experimental（WindowsTerminalControl.WinUI 的组合承载依赖），并以 self-contained 模式包含 Windows App SDK、Windows Terminal 控件和 ConPTY 运行时；运行时不需要访问网络。
 
 在仓库根目录运行：
 
@@ -40,7 +40,7 @@ SSH 档案和连接参数回归检查：
 
 ## 密码与 SSH 密钥
 
-密码以 DPAPI CurrentUser 方式加密后保存在 `profiles.json` 中，只有当前 Windows 用户能够解密。连接由 Windows OpenSSH 执行；保存密码时，工具通过 OpenSSH askpass 接口自动提供一次密码，不把明文放进命令行或连接档案环境变量。SSH 会话在 Windows ConPTY 中运行，终端字节流通过本地 WebView2 交给 xterm.js 显示。首次连接新主机时会显示主机密钥确认框。
+密码以 DPAPI CurrentUser 方式加密后保存在 `profiles.json` 中，只有当前 Windows 用户能够解密。连接由 Windows OpenSSH 执行；保存密码时，工具通过 OpenSSH askpass 接口自动提供一次密码，不把明文放进命令行或连接档案环境变量。SSH 会话在 Windows ConPTY 中运行，终端字节流交给 Windows Terminal 原生控件显示。首次连接新主机时会显示主机密钥确认框。
 
 若要免去每次连接输入密码，建议配置 SSH 公钥认证，并将私钥加入 Windows OpenSSH agent。工具的私钥字段是可选的；留空时会使用 SSH 配置或 agent 中的默认设置。工具不会修改服务器的 authorized_keys。
 

@@ -37,12 +37,6 @@ jobs:
       - name: Run store and ConPTY tests
         run: dotnet run --project wt-ssh-manager.tests/WtSshManager.StoreTests.csproj -c Release --no-restore -p:NuGetAudit=false
 
-      - name: Check terminal frontend
-        shell: pwsh
-        run: |
-          node --check wt-ssh-manager/TerminalUi/vendor/xterm.js
-          node --check wt-ssh-manager/TerminalUi/terminal.js
-
       - name: Publish application
         run: dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -o artifacts/wt-ssh-manager -p:NuGetAudit=false
 
@@ -53,7 +47,6 @@ jobs:
           $keepDirectories = @(
             "askpass",
             "Assets",
-            "TerminalUi",
             "Microsoft.UI.Xaml",
             "en-us",
             "zh-CN"

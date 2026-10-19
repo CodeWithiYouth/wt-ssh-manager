@@ -1,225 +1,332 @@
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json;
-using System.Threading.Channels;
-using Microsoft.UI.Dispatching;
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Input;
 using Windows.ApplicationModel.DataTransfer;
-using Microsoft.Web.WebView2.Core;
+using Windows.System;
+using Windows.UI.Core;
+using WindowsTerminalControl.Core;
+using WindowsTerminalControl.WinUI;
+using NativeConPtySession = WindowsTerminalControl.Core.ConPtySession;
 
 namespace WtSshManager;
 
 public sealed partial class EmbeddedTerminalView : UserControl, IDisposable, IAsyncDisposable
 {
-    private const string VirtualHostName = "wtsshmanager.local";
     private readonly TaskCompletionSource _viewLoaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _terminalReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private Task? _initializeTask;
-    private ConPtySession? _session;
-    private int _columns = 120;
-    private int _rows = 32;
+    private readonly TaskCompletionSource _terminalInitialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TerminalControl _terminalControl;
+    private readonly SemaphoreSlim _pasteGate = new(1, 1);
+    private MouseMotionFilteringSession? _session;
+    private TerminalSessionConnection? _connection;
+    private InputKeyboardSource? _keyboardSource;
+    private nint _nativeTerminalWindow;
+    private nint _previousNativeWndProc;
+    private NativeWndProc? _nativeWndProc;
     private int _disposed;
 
     public EmbeddedTerminalView()
     {
         InitializeComponent();
+        _terminalControl = new TerminalControl(TerminalHostMode.Composition)
+        {
+            Margin = new Thickness(0),
+            MinWidth = 0,
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        TerminalHost.Children.Add(_terminalControl);
         Loaded += EmbeddedTerminalView_Loaded;
-        SizeChanged += (_, _) => RequestLayout();
+        SizeChanged += EmbeddedTerminalView_SizeChanged;
+        _terminalControl.Initialized += TerminalControl_Initialized;
+        _terminalControl.InitializationFailed += TerminalControl_InitializationFailed;
+        Unloaded += EmbeddedTerminalView_Unloaded;
     }
 
     public event Action<string>? StatusChanged;
 
     public void RequestLayout()
     {
-        if (Volatile.Read(ref _disposed) == 0 && TerminalWebView.CoreWebView2 is not null)
+        if (Volatile.Read(ref _disposed) == 0)
         {
-            PostMessage(new { type = "fit" });
+            _terminalControl.UpdateHostBounds();
         }
     }
 
-    public async Task ConnectAsync(SshProfile profile, string runnerPath)
+    public async Task ConnectAsync(SshProfile profile, string runnerPath, string profilePath)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        SetStatus("正在初始化内嵌终端…");
+        SetStatus("正在初始化原生终端…");
 
         await _viewLoaded.Task.WaitAsync(TimeSpan.FromSeconds(20));
-        _initializeTask ??= InitializeTerminalAsync();
-        await _initializeTask;
-        await _terminalReady.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        await _terminalInitialized.Task.WaitAsync(TimeSpan.FromSeconds(20));
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        SetStatus("内嵌终端已就绪");
 
-        _session = ConPtySession.Start(
-            runnerPath,
-            profile,
-            _columns,
-            _rows,
-            Session_OutputReceived,
-            Session_ProcessExited);
-        SetStatus("SSH 会话已启动");
-        PostMessage(new { type = "focus" });
+        var runnerCommand = string.Join(
+            " ",
+            QuoteWindowsArgument(runnerPath),
+            "--connect",
+            QuoteWindowsArgument(profile.Id.ToString("D")),
+            "--profiles-file",
+            QuoteWindowsArgument(profilePath));
+        var workingDirectory = Path.GetDirectoryName(Path.GetFullPath(runnerPath)) ?? AppContext.BaseDirectory;
+        var processSession = new NativeConPtySession(runnerCommand, workingDirectory);
+        var session = new MouseMotionFilteringSession(processSession);
+        var connection = new TerminalSessionConnection(session);
+        _session = session;
+        _connection = connection;
+
+        try
+        {
+            _terminalControl.Connection = connection;
+            _terminalControl.UpdateHostBounds();
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            SetStatus("原生 SSH 终端已就绪");
+            _terminalControl.Focus(FocusState.Programmatic);
+        }
+        catch
+        {
+            if (ReferenceEquals(_session, session))
+            {
+                _session = null;
+            }
+
+            if (ReferenceEquals(_connection, connection))
+            {
+                _connection = null;
+            }
+
+            connection.Dispose();
+            throw;
+        }
     }
 
     private void EmbeddedTerminalView_Loaded(object sender, RoutedEventArgs e)
     {
-        _initializeTask ??= InitializeTerminalAsync();
+        _terminalControl.UpdateHostBounds();
+        AttachKeyboardSource();
         _viewLoaded.TrySetResult();
     }
 
-    private async Task InitializeTerminalAsync()
+    private void EmbeddedTerminalView_Unloaded(object sender, RoutedEventArgs e)
     {
-        await TerminalWebView.EnsureCoreWebView2Async();
-
-        var assetsFolder = Path.Combine(AppContext.BaseDirectory, "TerminalUi");
-        if (!Directory.Exists(assetsFolder))
-        {
-            throw new DirectoryNotFoundException($"找不到内嵌终端资源目录：{assetsFolder}");
-        }
-
-        var core = TerminalWebView.CoreWebView2
-            ?? throw new InvalidOperationException("WebView2 核心初始化失败。");
-        core.SetVirtualHostNameToFolderMapping(
-            VirtualHostName,
-            assetsFolder,
-            CoreWebView2HostResourceAccessKind.DenyCors);
-        core.WebMessageReceived += CoreWebView2_WebMessageReceived;
-        core.NavigationCompleted += (_, args) =>
-        {
-            if (!args.IsSuccess)
-            {
-                SetStatus($"终端页面加载失败：{args.WebErrorStatus}");
-            }
-        };
-        core.WebResourceResponseReceived += (sender, args) =>
-        {
-            if (args.Response.StatusCode >= 400 &&
-                args.Request.Uri.StartsWith($"https://{VirtualHostName}/", StringComparison.OrdinalIgnoreCase))
-            {
-                var message = $"终端资源加载失败：{new Uri(args.Request.Uri).AbsolutePath} ({args.Response.StatusCode})";
-                _ = DispatcherQueue.TryEnqueue(() => SetStatus(message));
-            }
-        };
-        core.Navigate($"https://{VirtualHostName}/index.html");
+        DetachKeyboardSource();
+        UninstallNativePasteHook();
     }
 
-    private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    private void EmbeddedTerminalView_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (!e.Source.StartsWith($"https://{VirtualHostName}/", StringComparison.OrdinalIgnoreCase))
+        _terminalControl.UpdateHostBounds();
+    }
+
+    private void TerminalControl_Initialized(object? sender, EventArgs e)
+    {
+        InstallNativePasteHook();
+        _terminalInitialized.TrySetResult();
+    }
+
+    private void TerminalControl_InitializationFailed(object? sender, Exception exception)
+    {
+        _terminalInitialized.TrySetException(exception);
+    }
+
+    private void AttachKeyboardSource()
+    {
+        if (_keyboardSource is not null || XamlRoot is not { } xamlRoot)
         {
             return;
         }
 
         try
         {
-            using var message = JsonDocument.Parse(e.WebMessageAsJson);
-            var root = message.RootElement;
-            var type = root.GetProperty("type").GetString();
-            switch (type)
-            {
-                case "ready":
-                    _terminalReady.TrySetResult();
-                    break;
-                case "renderer-error":
-                    var error = root.TryGetProperty("message", out var errorMessage)
-                        ? errorMessage.GetString()
-                        : null;
-                    SetStatus($"终端前端错误：{error ?? "未知错误"}");
-                    break;
-                case "input":
-                    if (root.TryGetProperty("data", out var input) && input.GetString() is { } text)
-                    {
-                        _ = WriteInputAsync(text);
-                    }
-
-                    break;
-                case "resize":
-                    if (root.TryGetProperty("cols", out var columns) &&
-                        root.TryGetProperty("rows", out var rows))
-                    {
-                        _columns = Math.Clamp(columns.GetInt32(), 2, short.MaxValue);
-                        _rows = Math.Clamp(rows.GetInt32(), 2, short.MaxValue);
-                        _session?.Resize(_columns, _rows);
-                    }
-
-                    break;
-                case "copy":
-                    PostMessage(new { type = "selection" });
-                    break;
-                case "selection":
-                    if (root.TryGetProperty("data", out var selection) &&
-                        !string.IsNullOrEmpty(selection.GetString()))
-                    {
-                        var clipboardData = new DataPackage();
-                        clipboardData.SetText(selection.GetString());
-                        Clipboard.SetContent(clipboardData);
-                        SetStatus("已复制终端选区");
-                    }
-
-                    break;
-                case "paste":
-                    _ = PasteClipboardAsync();
-                    break;
-            }
+            _keyboardSource = InputKeyboardSource.GetForWindowId(
+                xamlRoot.ContentIslandEnvironment.AppWindowId);
+            _keyboardSource.KeyDown += InputKeyboardSource_KeyDown;
         }
-        catch (JsonException)
+        catch (Exception exception)
         {
-            SetStatus("终端消息格式错误");
+            _keyboardSource = null;
+            SetStatus($"终端键盘输入初始化失败：{exception.Message}");
         }
     }
 
-    private async Task WriteInputAsync(string text)
+    private void DetachKeyboardSource()
     {
-        try
+        if (_keyboardSource is not { } source)
         {
-            if (_session is { } session)
-            {
-                await session.WriteInputAsync(text);
-            }
+            return;
         }
-        catch (Exception exception) when (exception is ChannelClosedException or ObjectDisposedException)
-        {
-            _ = DispatcherQueue.TryEnqueue(() => SetStatus("SSH 会话已关闭"));
-        }
+
+        source.KeyDown -= InputKeyboardSource_KeyDown;
+        _keyboardSource = null;
     }
+
+    private void InputKeyboardSource_KeyDown(InputKeyboardSource sender, Microsoft.UI.Input.KeyEventArgs args)
+    {
+        if (args.VirtualKey != VirtualKey.V ||
+            !IsKeyDown(VirtualKey.Control) ||
+            _session is null ||
+            _nativeTerminalWindow != 0 ||
+            !IsActiveTerminal)
+        {
+            return;
+        }
+
+        args.Handled = true;
+        _ = PasteClipboardAsync();
+    }
+
+    private bool IsActiveTerminal =>
+        IsLoaded &&
+        Visibility == Visibility.Visible &&
+        ActualWidth > 0 &&
+        ActualHeight > 0;
 
     private async Task PasteClipboardAsync()
     {
+        if (!await _pasteGate.WaitAsync(0))
+        {
+            return;
+        }
+
         try
         {
             var content = Clipboard.GetContent();
-            if (content.Contains(StandardDataFormats.Text) && _session is { } session)
+            if (!content.Contains(StandardDataFormats.Text) || _session is not { } session)
             {
-                await session.WriteInputAsync(await content.GetTextAsync());
+                return;
+            }
+
+            var text = await content.GetTextAsync();
+            if (text.Length > 0)
+            {
+                await session.WriteAsync(text, CancellationToken.None);
             }
         }
-        catch (Exception exception) when (exception is COMException or InvalidOperationException)
+        catch (Exception exception)
         {
-            SetStatus($"读取剪贴板失败：{exception.Message}");
+            SetStatus($"粘贴失败：{exception.Message}");
+        }
+        finally
+        {
+            _pasteGate.Release();
         }
     }
 
-    private void Session_OutputReceived(string text)
-    {
-        _ = DispatcherQueue.TryEnqueue(() => PostMessage(new { type = "output", data = text }));
-    }
+    private static bool IsKeyDown(VirtualKey key) =>
+        (InputKeyboardSource.GetKeyStateForCurrentThread(key) & CoreVirtualKeyStates.Down) != 0;
 
-    private void Session_ProcessExited(int exitCode)
+    private void InstallNativePasteHook()
     {
-        _ = DispatcherQueue.TryEnqueue(() =>
+        if (_nativeTerminalWindow != 0)
         {
-            PostMessage(new { type = "output", data = $"\r\n[SSH 进程已退出，代码 {exitCode}]\r\n" });
-            SetStatus($"SSH 进程已退出（代码 {exitCode}）");
-        });
-    }
-
-    private void PostMessage(object message)
-    {
-        var core = TerminalWebView.CoreWebView2;
-        if (core is not null && Volatile.Read(ref _disposed) == 0)
-        {
-            core.PostWebMessageAsJson(JsonSerializer.Serialize(message));
+            return;
         }
+
+        try
+        {
+            var field = typeof(TerminalControl).GetField(
+                "_terminalWindow",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var terminalWindow = field?.GetValue(_terminalControl) is IntPtr handle ? handle : IntPtr.Zero;
+            if (terminalWindow == IntPtr.Zero)
+            {
+                return;
+            }
+
+            _nativeWndProc = NativeTerminalWndProc;
+            var previousWndProc = SetWindowLongPtr(
+                terminalWindow,
+                WindowLongPtrWndProc,
+                Marshal.GetFunctionPointerForDelegate(_nativeWndProc));
+            if (previousWndProc == IntPtr.Zero)
+            {
+                _nativeWndProc = null;
+                return;
+            }
+
+            _nativeTerminalWindow = terminalWindow;
+            _previousNativeWndProc = previousWndProc;
+        }
+        catch (Exception exception)
+        {
+            _nativeWndProc = null;
+            SetStatus($"终端粘贴快捷键初始化失败：{exception.Message}");
+        }
+    }
+
+    private void UninstallNativePasteHook()
+    {
+        var terminalWindow = _nativeTerminalWindow;
+        var previousWndProc = _previousNativeWndProc;
+        if (terminalWindow != IntPtr.Zero && previousWndProc != IntPtr.Zero)
+        {
+            _ = SetWindowLongPtr(terminalWindow, WindowLongPtrWndProc, previousWndProc);
+        }
+
+        _nativeTerminalWindow = IntPtr.Zero;
+        _previousNativeWndProc = IntPtr.Zero;
+        _nativeWndProc = null;
+    }
+
+    private nint NativeTerminalWndProc(nint window, uint message, nint wParam, nint lParam)
+    {
+        if (_session is not null && IsPasteMessage(message, wParam))
+        {
+            _ = DispatcherQueue.TryEnqueue(() => _ = PasteClipboardAsync());
+            return IntPtr.Zero;
+        }
+
+        return CallWindowProc(_previousNativeWndProc, window, message, wParam, lParam);
+    }
+
+    private static bool IsPasteMessage(uint message, nint wParam)
+    {
+        if (message == WmPaste)
+        {
+            return true;
+        }
+
+        return (message == WmKeyDown || message == WmSysKeyDown) &&
+               wParam.ToInt64() == VirtualKeyV &&
+               IsNativeKeyDown(VirtualKeyControl);
+    }
+
+    private static bool IsNativeKeyDown(int key) => (GetKeyState(key) & 0x8000) != 0;
+
+    private static string QuoteWindowsArgument(string value)
+    {
+        var builder = new StringBuilder(value.Length + 2);
+        builder.Append('"');
+        var backslashes = 0;
+        foreach (var character in value)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                builder.Append('\\', backslashes * 2 + 1);
+                builder.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            builder.Append('\\', backslashes);
+            builder.Append(character);
+            backslashes = 0;
+        }
+
+        builder.Append('\\', backslashes * 2);
+        builder.Append('"');
+        return builder.ToString();
     }
 
     private void SetStatus(string message)
@@ -234,23 +341,175 @@ public sealed partial class EmbeddedTerminalView : UserControl, IDisposable, IAs
             return;
         }
 
-        var session = Interlocked.Exchange(ref _session, null);
-        session?.Dispose();
+        DetachKeyboardSource();
+        UninstallNativePasteHook();
+        var connection = Interlocked.Exchange(ref _connection, null);
+        if (connection is not null)
+        {
+            if (ReferenceEquals(_terminalControl.Connection, connection))
+            {
+                _terminalControl.Connection = null;
+            }
+
+            connection.Dispose();
+        }
+
+        Interlocked.Exchange(ref _session, null)?.Dispose();
+        _terminalControl.Dispose();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-        {
-            return;
-        }
-
-        var session = Interlocked.Exchange(ref _session, null);
-        if (session is not null)
-        {
-            await Task.Run(session.Dispose);
-        }
+        Dispose();
+        return ValueTask.CompletedTask;
     }
 
-}
+    private sealed class MouseMotionFilteringSession(NativeConPtySession inner) : ITerminalSession
+    {
+        public event EventHandler<TerminalDataEventArgs>? OutputReceived
+        {
+            add => inner.OutputReceived += value;
+            remove => inner.OutputReceived -= value;
+        }
 
+        public event EventHandler<TerminalErrorEventArgs>? Failed
+        {
+            add => inner.Failed += value;
+            remove => inner.Failed -= value;
+        }
+
+        public event EventHandler? Exited
+        {
+            add => inner.Exited += value;
+            remove => inner.Exited -= value;
+        }
+
+        public Task StartAsync(TerminalSize initialSize, CancellationToken cancellationToken) =>
+            inner.StartAsync(initialSize, cancellationToken);
+
+        public ValueTask WriteAsync(string data, CancellationToken cancellationToken) =>
+            inner.WriteAsync(MouseMotionFilter.RemoveReports(data), cancellationToken);
+
+        public ValueTask ResizeAsync(TerminalSize size, CancellationToken cancellationToken) =>
+            inner.ResizeAsync(size, cancellationToken);
+
+        public void Dispose() => inner.Dispose();
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate nint NativeWndProc(nint window, uint message, nint wParam, nint lParam);
+
+    private const int WindowLongPtrWndProc = -4;
+    private const uint WmKeyDown = 0x0100;
+    private const uint WmSysKeyDown = 0x0104;
+    private const uint WmPaste = 0x0302;
+    private const int VirtualKeyV = 0x56;
+    private const int VirtualKeyControl = 0x11;
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern nint SetWindowLongPtr(nint window, int index, nint value);
+
+    [DllImport("user32.dll", EntryPoint = "CallWindowProcW")]
+    private static extern nint CallWindowProc(nint previousWndProc, nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int key);
+
+    private static class MouseMotionFilter
+    {
+        public static string RemoveReports(string data)
+        {
+            if (data.Length < 4)
+            {
+                return data;
+            }
+
+            var filtered = new StringBuilder(data.Length);
+            for (var index = 0; index < data.Length;)
+            {
+                if (TryReadSgrOrUrxvtMotion(data, index, out var sequenceLength) ||
+                    TryReadLegacyMotion(data, index, out sequenceLength))
+                {
+                    index += sequenceLength;
+                    continue;
+                }
+
+                filtered.Append(data[index++]);
+            }
+
+            return filtered.ToString();
+        }
+
+        private static bool TryReadSgrOrUrxvtMotion(string data, int start, out int length)
+        {
+            length = 0;
+            if (start + 3 >= data.Length || data[start] != '\x1b' || data[start + 1] != '[')
+            {
+                return false;
+            }
+
+            var cursor = start + 2;
+            if (data[cursor] == '<')
+            {
+                cursor++;
+            }
+
+            var codeStart = cursor;
+            while (cursor < data.Length && char.IsDigit(data[cursor]))
+            {
+                cursor++;
+            }
+
+            if (cursor == codeStart || cursor >= data.Length || data[cursor] != ';' ||
+                !int.TryParse(data.AsSpan(codeStart, cursor - codeStart), out var code))
+            {
+                return false;
+            }
+
+            for (var field = 0; field < 2; field++)
+            {
+                cursor++;
+                var fieldStart = cursor;
+                while (cursor < data.Length && char.IsDigit(data[cursor]))
+                {
+                    cursor++;
+                }
+
+                if (cursor == fieldStart || cursor >= data.Length || data[cursor] != ';')
+                {
+                    if (field != 1 || cursor == fieldStart || cursor >= data.Length)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            if (cursor >= data.Length || data[cursor] != 'M' || (code & 32) == 0)
+            {
+                return false;
+            }
+
+            length = cursor - start + 1;
+            return true;
+        }
+
+        private static bool TryReadLegacyMotion(string data, int start, out int length)
+        {
+            length = 0;
+            if (start + 5 >= data.Length || data[start] != '\x1b' || data[start + 1] != '[' ||
+                data[start + 2] != 'M')
+            {
+                return false;
+            }
+
+            var button = data[start + 3] - 32;
+            if ((button & 32) == 0)
+            {
+                return false;
+            }
+
+            length = 6;
+            return true;
+        }
+    }
+}

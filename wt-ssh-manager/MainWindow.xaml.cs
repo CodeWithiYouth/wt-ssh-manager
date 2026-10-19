@@ -368,7 +368,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            await terminal.ConnectAsync(profile, runner);
+            await terminal.ConnectAsync(profile, runner, _store.ProfilePath);
             profile.LastConnectedUtc = DateTime.UtcNow;
             if (!SaveProfiles())
             {
@@ -406,22 +406,12 @@ public sealed partial class MainWindow : Window
 
     private void FitTerminalViews()
     {
-        var availableWidth = TerminalTabs.ActualWidth;
-        var availableHeight = TerminalTabs.ActualHeight;
-        if (!double.IsFinite(availableWidth) || availableWidth <= 0 ||
-            !double.IsFinite(availableHeight) || availableHeight <= 0)
-        {
-            return;
-        }
-
-        var viewWidth = Math.Max(0, availableWidth);
-        var viewHeight = Math.Max(160, availableHeight - 44);
         foreach (var tab in TerminalTabs.TabItems.OfType<TabViewItem>())
         {
             if (tab.Content is EmbeddedTerminalView terminal)
             {
-                terminal.Width = viewWidth;
-                terminal.Height = viewHeight;
+                terminal.ClearValue(FrameworkElement.WidthProperty);
+                terminal.ClearValue(FrameworkElement.HeightProperty);
                 terminal.HorizontalAlignment = HorizontalAlignment.Stretch;
                 terminal.VerticalAlignment = VerticalAlignment.Stretch;
                 terminal.RequestLayout();

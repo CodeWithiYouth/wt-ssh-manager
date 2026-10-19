@@ -21,7 +21,7 @@ const terminal = new window.Terminal({
   cursorBlink: true,
   fontFamily: 'Consolas, "Cascadia Mono", monospace',
   fontSize: 14,
-  scrollback: 0,
+  scrollback: 10000,
   theme: {
     background: "#0c0c0c",
     foreground: "#f3f3f3",
@@ -50,8 +50,39 @@ const fitAddon = new window.FitAddon.FitAddon();
 terminal.loadAddon(fitAddon);
 terminal.open(document.getElementById("terminal"));
 
+let refreshPending = false;
+let clearTexturePending = false;
+
+function refreshTerminalView(clearTexture = false) {
+  if (clearTexture && typeof terminal.clearTextureAtlas === "function") {
+    terminal.clearTextureAtlas();
+  }
+
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
+  }
+}
+
+function scheduleTerminalRefresh(clearTexture = false) {
+  clearTexturePending ||= clearTexture;
+  if (refreshPending) {
+    return;
+  }
+
+  refreshPending = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      refreshPending = false;
+      const shouldClearTexture = clearTexturePending;
+      clearTexturePending = false;
+      refreshTerminalView(shouldClearTexture);
+    });
+  });
+}
+
 function fitAndReport() {
   fitAddon.fit();
+  scheduleTerminalRefresh(true);
   post({ type: "resize", cols: terminal.cols, rows: terminal.rows });
 }
 
@@ -61,7 +92,7 @@ if (bridge) {
   bridge.addEventListener("message", event => {
     const message = event.data;
     if (message.type === "output") {
-      terminal.write(message.data);
+      terminal.write(message.data, () => scheduleTerminalRefresh());
     } else if (message.type === "selection") {
       post({ type: "selection", data: terminal.getSelection() });
     } else if (message.type === "focus") {
@@ -84,15 +115,34 @@ document.addEventListener("keydown", event => {
   }
 }, true);
 
+const terminalShell = document.getElementById("terminal-shell");
 new ResizeObserver(() => requestAnimationFrame(fitAndReport))
-  .observe(document.getElementById("terminal-container"));
+  .observe(terminalShell);
 
-window.addEventListener("focus", () => terminal.focus());
+function refreshVisibleTerminal() {
+  fitAndReport();
+  terminal.focus();
+}
+
+window.addEventListener("focus", refreshVisibleTerminal);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    refreshVisibleTerminal();
+  }
+});
 window.focusTerminal = () => terminal.focus();
 
-requestAnimationFrame(() => {
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+
+async function initializeTerminal() {
+  await nextFrame();
+  await nextFrame();
   fitAndReport();
   post({ type: "ready" });
   terminal.focus();
-});
+  setTimeout(refreshVisibleTerminal, 50);
+  setTimeout(refreshVisibleTerminal, 250);
+}
+
+initializeTerminal();
 

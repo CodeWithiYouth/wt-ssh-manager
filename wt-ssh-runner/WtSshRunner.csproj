@@ -13,6 +13,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="artifacts\**" />
+    <EmbeddedResource Remove="artifacts\**" />
+    <None Remove="artifacts\**" />
+    <Page Remove="artifacts\**" />
+    <Content Remove="artifacts\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\wt-ssh-manager\SshProfile.cs" Link="SshProfile.cs" />
     <Compile Include="..\wt-ssh-manager\ProfileStore.cs" Link="ProfileStore.cs" />
     <Compile Include="..\wt-ssh-manager\SecretProtector.cs" Link="SecretProtector.cs" />
