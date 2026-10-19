@@ -36,7 +36,7 @@ SSH 档案和连接参数回归检查：
 
     dotnet run --project wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
 
-发布后的可运行目录位于 `publish/`。
+发布后的可运行目录位于 `artifacts/wt-ssh-manager/`。GitHub Release ZIP 会将完整运行目录收纳到 `app/`，启动 `app\WtSshManager.exe`；不要拆分或移动 `app/` 内的 DLL 和资源文件。
 
 ## 密码与 SSH 密钥
 

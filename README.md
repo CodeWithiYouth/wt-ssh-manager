@@ -29,6 +29,8 @@ dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release -o artifacts/wt-ssh
 
 The published executable is placed in `artifacts/wt-ssh-manager/`. The GitHub Actions workflow runs the same build, regression tests and terminal frontend syntax check on `windows-latest`.
 
+Release ZIPs use a compact layout with the complete self-contained runtime under `app/`; start the application with `app/WtSshManager.exe`. The package keeps only the `zh-CN` and `en-us` resource folders and the required WinUI resource directory. Keep the `app/` directory together because its DLLs and resource files are required by the unpackaged WinUI application.
+
 ## Release
 
 Push a version tag to build a ZIP and publish a GitHub Release automatically:

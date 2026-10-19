@@ -44,6 +44,33 @@ jobs:
       - name: Publish application
         run: dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -o artifacts/wt-ssh-manager -p:NuGetAudit=false
 
+      - name: Organize published files
+        shell: pwsh
+        run: |
+          $publishPath = "artifacts/wt-ssh-manager"
+          $keepDirectories = @(
+            "askpass",
+            "Assets",
+            "TerminalUi",
+            "Microsoft.UI.Xaml",
+            "en-us",
+            "zh-CN"
+          )
+
+          $localizedDirectories = Get-ChildItem -LiteralPath $publishPath -Directory |
+            Where-Object {
+              $keepDirectories -notcontains $_.Name -and
+              $_.Name -match '^[A-Za-z]{2,3}(-[A-Za-z0-9]+)+$'
+            }
+          foreach ($directory in $localizedDirectories) {
+            Remove-Item -LiteralPath $directory.FullName -Recurse -Force
+          }
+
+          $symbolFiles = Get-ChildItem -LiteralPath $publishPath -Recurse -File -Filter "*.pdb"
+          foreach ($symbolFile in $symbolFiles) {
+            Remove-Item -LiteralPath $symbolFile.FullName -Force
+          }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -66,7 +93,22 @@ jobs:
 
       - name: Package release archive
         shell: pwsh
-        run: Compress-Archive -Path artifacts/wt-ssh-manager/* -DestinationPath "artifacts/wt-ssh-manager-${{ github.ref_name }}.zip"
+        run: |
+          $packageRoot = "artifacts/package"
+          $appRoot = Join-Path $packageRoot "app"
+          New-Item -ItemType Directory -Force -Path $appRoot | Out-Null
+          Copy-Item -Path "artifacts/wt-ssh-manager/*" -Destination $appRoot -Recurse -Force
+
+          @"
+          Wt SSH Manager ${{ github.ref_name }}
+
+          Run app\WtSshManager.exe.
+          Keep the app directory together; its DLLs and resource files are required by the self-contained WinUI application.
+          "@ | Set-Content -Path (Join-Path $packageRoot "README.txt") -Encoding utf8
+
+          Compress-Archive `
+            -Path "$packageRoot/*" `
+            -DestinationPath "artifacts/wt-ssh-manager-${{ github.ref_name }}.zip"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
