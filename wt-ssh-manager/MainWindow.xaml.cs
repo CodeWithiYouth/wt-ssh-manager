@@ -335,10 +335,10 @@ public sealed partial class MainWindow : Window
 
     private async Task ConnectAsync(SshProfile profile)
     {
-        var runner = Path.Combine(AppContext.BaseDirectory, "askpass", "WtSshRunner.exe");
-        if (!File.Exists(runner))
+        var runner = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(runner) || !File.Exists(runner))
         {
-            await ShowMessageAsync("SSH 连接组件缺失", "找不到 askpass 连接组件。请重新构建或发布应用。");
+            await ShowMessageAsync("SSH 连接组件缺失", "找不到当前应用的后台连接组件。请重新构建或发布应用。");
             return;
         }
 

@@ -15,6 +15,7 @@
 - 点击“连接”或双击档案，在应用内打开终端标签页；多个 SSH 会话可以同时保留。
 - 每个终端标签页的内容就是完整终端区域；复制和粘贴使用终端快捷键 Ctrl+Shift+C/V，标签页关闭按钮负责结束会话。
 - 内嵌终端使用 WindowsTerminalControl.WinUI 和 Windows ConPTY，采用 Windows Terminal 原生渲染，使用组合承载避免原生窗口覆盖 WinUI 布局，支持 ANSI/VT 画面、交互输入、鼠标和窗口尺寸同步，可运行 Cline 等 TUI。
+- 当前管理器 EXE 同时提供后台 SSH runner 和 askpass 模式，发布包不再包含独立的 runner 运行时。
 - 关闭终端标签页或主窗口时会结束对应 SSH 进程树；首次连接新主机时会显示主机密钥确认框。
 - 档案保存在当前 Windows 用户的 %APPDATA%/WtSshManager/profiles.json。
 
@@ -36,11 +37,11 @@ SSH 档案和连接参数回归检查：
 
     dotnet run --project wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
 
-发布后的可运行目录位于 `artifacts/wt-ssh-manager/`。GitHub Release ZIP 会将完整运行目录收纳到 `app/`，启动 `app\WtSshManager.exe`；不要拆分或移动 `app/` 内的 DLL 和资源文件。
+发布后的可运行目录位于 `artifacts/wt-ssh-manager/`。GitHub Release ZIP 会将完整运行目录收纳到 `app/`，启动 `app\WtSshManager.exe`；不要拆分或移动 `app/` 内的 DLL 和资源文件。连接会话和 askpass 使用同一个 `WtSshManager.exe` 后台模式。
 
 ## 密码与 SSH 密钥
 
-密码以 DPAPI CurrentUser 方式加密后保存在 `profiles.json` 中，只有当前 Windows 用户能够解密。连接由 Windows OpenSSH 执行；保存密码时，工具通过 OpenSSH askpass 接口自动提供一次密码，不把明文放进命令行或连接档案环境变量。SSH 会话在 Windows ConPTY 中运行，终端字节流交给 Windows Terminal 原生控件显示。首次连接新主机时会显示主机密钥确认框。
+密码以 DPAPI CurrentUser 方式加密后保存在 `profiles.json` 中，只有当前 Windows 用户能够解密。连接由 Windows OpenSSH 执行；保存密码时，当前 `WtSshManager.exe` 通过后台 askpass 模式自动提供一次密码，不把明文放进命令行或连接档案环境变量。SSH 会话在 Windows ConPTY 中运行，终端字节流交给 Windows Terminal 原生控件显示。首次连接新主机时会显示主机密钥确认框。
 
 若要免去每次连接输入密码，建议配置 SSH 公钥认证，并将私钥加入 Windows OpenSSH agent。工具的私钥字段是可选的；留空时会使用 SSH 配置或 agent 中的默认设置。工具不会修改服务器的 authorized_keys。
 

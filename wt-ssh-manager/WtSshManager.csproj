@@ -45,23 +45,5 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
-
-  <Target Name="RestoreSshRunner" BeforeTargets="Build">
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
-             Targets="Restore"
-             Properties="RuntimeIdentifier=win-x64;SelfContained=true" />
-  </Target>
-
-  <Target Name="PublishSshRunnerForBuild" AfterTargets="Build">
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;NoRestore=true;PublishDir=$(MSBuildProjectDirectory)\$(OutDir)askpass\" />
-  </Target>
-
-  <Target Name="PublishSshRunnerForPublish" AfterTargets="Publish">
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;NoRestore=true;PublishDir=$(PublishDir)askpass\" />
-  </Target>
 </Project>
 

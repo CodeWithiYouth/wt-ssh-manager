@@ -6,10 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>WtSshRunner</AssemblyName>
     <RootNamespace>WtSshRunner</RootNamespace>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\wt-ssh-manager\SshRunner.cs" Link="SshRunner.cs" />
     <Compile Include="..\wt-ssh-manager\SshProfile.cs" Link="SshProfile.cs" />
     <Compile Include="..\wt-ssh-manager\ProfileStore.cs" Link="ProfileStore.cs" />
     <Compile Include="..\wt-ssh-manager\SecretProtector.cs" Link="SecretProtector.cs" />

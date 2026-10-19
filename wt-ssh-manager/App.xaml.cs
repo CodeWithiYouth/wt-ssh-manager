@@ -5,10 +5,16 @@ namespace WtSshManager;
 public partial class App : Application
 {
     private Window? _window;
+    private readonly bool _headless;
 
     public App()
     {
         UnhandledException += (_, args) => RecordStartupError(args.Exception);
+        _headless = SshRunner.IsHeadless(Environment.GetCommandLineArgs());
+        if (_headless)
+        {
+            return;
+        }
 
         try
         {
@@ -21,8 +27,25 @@ public partial class App : Application
         }
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (_headless)
+        {
+            try
+            {
+                var commandLine = Environment.GetCommandLineArgs();
+                var exitCode = await SshRunner.RunAsync(commandLine[1..]);
+                Environment.Exit(exitCode);
+            }
+            catch (Exception exception)
+            {
+                RecordStartupError(exception);
+                Environment.Exit(1);
+            }
+
+            return;
+        }
+
         try
         {
             _window = new MainWindow(GetProfilesFilePath());

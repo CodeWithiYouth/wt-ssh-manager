@@ -31,7 +31,7 @@ jobs:
           dotnet restore wt-ssh-manager/WtSshManager.csproj
           dotnet restore wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
 
-      - name: Build manager and runner
+      - name: Build manager
         run: dotnet build wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -p:NuGetAudit=false
 
       - name: Run store and ConPTY tests
@@ -45,7 +45,6 @@ jobs:
         run: |
           $publishPath = "artifacts/wt-ssh-manager"
           $keepDirectories = @(
-            "askpass",
             "Assets",
             "Microsoft.UI.Xaml",
             "en-us",
