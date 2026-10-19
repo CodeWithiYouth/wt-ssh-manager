@@ -29,6 +29,17 @@ dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release -o artifacts/wt-ssh
 
 The published executable is placed in `artifacts/wt-ssh-manager/`. The GitHub Actions workflow runs the same build, regression tests and terminal frontend syntax check on `windows-latest`.
 
+## Release
+
+Push a version tag to build a ZIP and publish a GitHub Release automatically:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tags beginning with `v` run the full build and attach `wt-ssh-manager-<tag>.zip` to the release with generated release notes.
+
 ## Security
 
 Profiles are stored under `%APPDATA%/WtSshManager/profiles.json`. Saved passwords are protected with DPAPI CurrentUser and are only decrypted when a connection starts. Do not commit a profile file or plaintext credentials.
