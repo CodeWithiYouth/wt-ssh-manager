@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/publish/
+**/.local-nuget/
+artifacts/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+profiles.json
+*.profiles.json
