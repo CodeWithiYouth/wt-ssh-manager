@@ -241,7 +241,9 @@ public sealed partial class MainWindow : Window
     private void ApplySidebarState()
     {
         SidebarColumn.Width = new GridLength(_sidebarCollapsed ? 48 : 320);
-        SidebarBorder.Padding = new Thickness(_sidebarCollapsed ? 8 : 14);
+        SidebarBorder.Padding = _sidebarCollapsed
+            ? new Thickness(0, 8, 0, 8)
+            : new Thickness(14);
         SidebarBorder.Margin = _sidebarCollapsed
             ? new Thickness(0, 0, 8, 0)
             : new Thickness(20, 14, 8, 14);
