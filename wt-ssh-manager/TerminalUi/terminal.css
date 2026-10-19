@@ -19,7 +19,13 @@ body,
   height: 100%;
 }
 
-.xterm-viewport {
-  overflow-y: auto !important;
+.xterm .xterm-viewport {
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 

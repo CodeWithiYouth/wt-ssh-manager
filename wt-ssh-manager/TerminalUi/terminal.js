@@ -21,7 +21,7 @@ const terminal = new window.Terminal({
   cursorBlink: true,
   fontFamily: 'Consolas, "Cascadia Mono", monospace',
   fontSize: 14,
-  scrollback: 10000,
+  scrollback: 0,
   theme: {
     background: "#0c0c0c",
     foreground: "#f3f3f3",
