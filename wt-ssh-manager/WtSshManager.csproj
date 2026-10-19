@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WtSshManager</AssemblyName>
+    <RootNamespace>WtSshManager</RootNamespace>
+    <ApplicationIcon>Assets\WtSshManager.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="TerminalUi\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\WtSshManager.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+
+  <Target Name="RestoreSshRunner" BeforeTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
+             Targets="Restore"
+             Properties="RuntimeIdentifier=win-x64;SelfContained=true" />
+  </Target>
+
+  <Target Name="PublishSshRunnerForBuild" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;NoRestore=true;PublishDir=$(MSBuildProjectDirectory)\$(OutDir)askpass\" />
+  </Target>
+
+  <Target Name="PublishSshRunnerForPublish" AfterTargets="Publish">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\wt-ssh-runner\WtSshRunner.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;NoRestore=true;PublishDir=$(PublishDir)askpass\" />
+  </Target>
+</Project>
+

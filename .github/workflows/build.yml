@@ -1,0 +1,48 @@
+name: Build Wt SSH Manager
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore projects
+        run: |
+          dotnet restore wt-ssh-manager/WtSshManager.csproj
+          dotnet restore wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
+
+      - name: Build manager and runner
+        run: dotnet build wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -p:NuGetAudit=false
+
+      - name: Run store and ConPTY tests
+        run: dotnet run --project wt-ssh-manager.tests/WtSshManager.StoreTests.csproj -c Release --no-restore -p:NuGetAudit=false
+
+      - name: Check terminal frontend
+        shell: pwsh
+        run: node --check wt-ssh-manager/TerminalUi/terminal.js
+
+      - name: Publish application
+        run: dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -o artifacts/wt-ssh-manager -p:NuGetAudit=false
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wt-ssh-manager
+          path: artifacts/wt-ssh-manager
+
