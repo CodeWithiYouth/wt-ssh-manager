@@ -39,7 +39,9 @@ jobs:
 
       - name: Check terminal frontend
         shell: pwsh
-        run: node --check wt-ssh-manager/TerminalUi/terminal.js
+        run: |
+          node --check wt-ssh-manager/TerminalUi/vendor/xterm.js
+          node --check wt-ssh-manager/TerminalUi/terminal.js
 
       - name: Publish application
         run: dotnet publish wt-ssh-manager/WtSshManager.csproj -c Release --no-restore -o artifacts/wt-ssh-manager -p:NuGetAudit=false
