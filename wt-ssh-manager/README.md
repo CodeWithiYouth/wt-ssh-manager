@@ -24,19 +24,19 @@
 
 在仓库根目录运行：
 
-    dotnet run --project tools/wt-ssh-manager/WtSshManager.csproj
+    dotnet run --project wt-ssh-manager/WtSshManager.csproj
 
 默认档案位于 `%APPDATA%/WtSshManager/profiles.json`；也可使用 `--profiles-file <path>` 指定档案文件。
 
 构建：
 
-    dotnet build tools/wt-ssh-manager/WtSshManager.csproj
+    dotnet build wt-ssh-manager/WtSshManager.csproj
 
 SSH 档案和连接参数回归检查：
 
-    dotnet run --project tools/wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
+    dotnet run --project wt-ssh-manager.tests/WtSshManager.StoreTests.csproj
 
-发布后的可运行目录位于 `tools/wt-ssh-manager/publish/`。
+发布后的可运行目录位于 `publish/`。
 
 ## 密码与 SSH 密钥
 
